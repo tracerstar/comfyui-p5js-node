@@ -2,7 +2,7 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { $el } from "/scripts/ui.js";
 
-async function saveSketch(srcCode) {
+async function saveSketch(filename, srcCode) {
   try {
     const response = await fetch("/HYPE/save_p5js_sketch", {
       method: "POST",
@@ -10,10 +10,12 @@ async function saveSketch(srcCode) {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: srcCode,
+      body: JSON.stringify({file: filename, code: srcCode}),
     });
     if (response.status !== 200)
       throw new Error(`Error saving sketch file: ${response.statusText}`);
+
+    return response;
   } catch (e) {
     console.log(`Error sending sketch file for saving: ${e}`);
   }
@@ -36,9 +38,14 @@ app.registerExtension({
       /*
         Set up the widget
       */
+      const d = new Date();
+      const base_filename = d.getUTCFullYear() + "_" + (d.getUTCMonth()+1) + "_" + d.getUTCDate() + '_'
+
+
       const widget = {
           type: "p5js_widget",
           name: "p5jsComfyNode",
+          sketchfile: base_filename + Math.floor(Math.random() * 10000), //unique filename for each widget
           size: [512,512],
           
           draw(ctx, node, widget_width, y, widget_height) {
@@ -77,7 +84,7 @@ app.registerExtension({
       /*
         Add an iframe to the node to preview the sketch
       */
-      let previewSrc = new URL(`../preview/index.html`, import.meta.url);
+      var previewSrc = new URL(`../preview/index.html`, import.meta.url);
       widget.inputEl = $el("iframe", { width:400,height:400, src: previewSrc });
       document.body.appendChild(widget.inputEl);
 
@@ -85,8 +92,14 @@ app.registerExtension({
         Add a button to run the save sketch method
       */
       this.addWidget("button", "Run Sketch", "run_p5js_sketch", () => {
-        saveSketch(this.widgets[0].value);
-        widget.inputEl.contentWindow.location.reload();
+        saveSketch(widget.sketchfile, this.widgets[0].value).then((response) => {
+          const jsonPromise = response.json();
+          jsonPromise.then((data) => {
+            let loadFile = data.file;
+            widget.inputEl.src = previewSrc + "?sketch=" + loadFile;
+            widget.inputEl.contentWindow.location.load();
+          });
+        });
       });
 
       /*

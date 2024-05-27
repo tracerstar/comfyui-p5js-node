@@ -11,23 +11,26 @@ from server import PromptServer
 
 subfolder = "p5js";
 full_output_folder = os.path.join(folder_paths.get_input_directory(), os.path.normpath(subfolder))
-save_sketch_file = os.path.abspath(os.path.join(full_output_folder, "sketch.js"))
 
 # save sketch to js file
 @PromptServer.instance.routes.post("/HYPE/save_p5js_sketch")
 async def saveSketch(request):
+
+    json_data = await request.json()
+    filename = json_data.get("file", "sketch") + ".js"
+    code = json_data.get("code", "")
+
     try:
         if not os.path.exists(full_output_folder):
             os.makedirs(full_output_folder)
 
-        with open(save_sketch_file, "wb") as f:
-            while True:
-                chunk = await request.content.read(1024)
-                if not chunk:
-                    break
-                f.write(chunk)
+        save_sketch_file = os.path.abspath(os.path.join(full_output_folder, filename))
 
-        return web.json_response({"message": "Sketch saved"}, status=200)
+        f = open(save_sketch_file, "w")
+        f.write(code)
+        f.close()
+
+        return web.json_response({"message": "Sketch saved", "file": filename}, status=200)
 
     except Exception as e:
         print("Error saving js file: ", e)
