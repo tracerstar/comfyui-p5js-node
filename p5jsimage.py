@@ -1,4 +1,5 @@
 import base64
+import nodes
 import folder_paths
 import os
 import time
@@ -57,21 +58,15 @@ def base64_to_tensor(base64_string):
     tensor_image = tensor_image.unsqueeze(0)
     return tensor_image
 
-class HYPE_P5JSImage:
-    def __init__(self):
-        pass
+class HYPE_P5JSImage(nodes.LoadImage):
     
     @classmethod
     def INPUT_TYPES(s):
         return {
-            "required": {},
-            "optional": {
-                "script": ("STRING", {"default": "function setup() {\n  createCanvas(512, 512);\n}\n\nfunction draw() {\n  background(220);\n}", "multiline": True}),
+            "required": {
+                "script": ("STRING", {"default": "function setup() {\n  createCanvas(512, 512);\n}\n\nfunction draw() {\n  background(220);\n}", "multiline": True, "dynamicPrompts": False}),
+                "image": ("P5JS", {}),
             },
-            "hidden": {
-                "prompt": "PROMPT",
-                "id": "UNIQUE_ID",
-            }
         }
 
     def IS_CHANGED(id):
@@ -86,14 +81,13 @@ class HYPE_P5JSImage:
 
     CATEGORY = "p5js"
 
-    def run(self, script, prompt, id):
-        PromptServer.instance.send_sync("proxy", {
-            "id": id,
-        })
-        outputs = MessageHolder.waitForMessage(id)
-        tensor_image = base64_to_tensor(outputs['output'])
-        tensor_image = tensor_image.permute(0, 2, 3, 1)
-        return (tensor_image,)
+    def run(s, script, image, **kwargs):
+        # tensor_image = base64_to_tensor(p5base64)
+
+        # tensor_image = tensor_image.permute(0, 2, 3, 1)
+        # return (tensor_image,)
+
+        return super().load_image(folder_paths.get_annotated_filepath(image))
 
 # Message Handling
 class MessageHolder:
