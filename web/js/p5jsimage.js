@@ -6,20 +6,24 @@ const p5jsPreviewSrc = new URL(`../preview/index.html`, import.meta.url);
 
 async function saveSketch(filename, srcCode) {
   try {
-    const response = await fetch("/HYPE/save_p5js_sketch", {
+    const blob = new Blob([srcCode], {type: 'text/plain'});
+    const file = new File([blob], filename+'.js');
+    const body = new FormData();
+    body.append("image", file);
+    body.append("subfolder", "p5js");
+    body.append("type", "temp");
+    body.append("overwrite", "true");//can also be set to 1
+    const resp = await api.fetchApi("/upload/image", {
       method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({file: filename, code: srcCode}),
+      body,
     });
-
-    if (response.status !== 200) {
-      throw new Error(`Error saving sketch file: ${response.statusText}`);
+    if (resp.status !== 200) {
+      const err = `Error uploading sketch: ${resp.status} - ${resp.statusText}`;
+      alert(err);
+      throw new Error(err);
     }
 
-    return response;
+    return resp;
   } catch (e) {
     console.log(`Error sending sketch file for saving: ${e}`);
   }
@@ -34,8 +38,6 @@ app.registerExtension({
     return {
       P5JS(node, inputName) {
 
-        //add sketch text area
-
         const d = new Date();
         const base_filename = d.getUTCFullYear() + "_" + (d.getUTCMonth()+1) + "_" + d.getUTCDate() + '_';
 
@@ -43,7 +45,7 @@ app.registerExtension({
           type: "P5JS",
           name: "image",
           size: [512,120],
-          sketchfile: base_filename + Math.floor(Math.random() * 10000), //unique filename for each widget
+          sketchfile: base_filename + Math.floor(Math.random() * 10000), //unique filename for each widget, don't love this... maybe make it a millis based time stamp?
           iframe: $el("iframe", { width:400, height:400, src:p5jsPreviewSrc }),
 
           draw(ctx, node, widget_width, y, widget_height) {
@@ -80,11 +82,7 @@ app.registerExtension({
         //add run sketch
         const btn = node.addWidget("button", "Run Sketch", "run_p5js_sketch", () => {
           saveSketch(widget.sketchfile, node.widgets[0].value).then((response) => {
-            const jsonPromise = response.json();
-            jsonPromise.then((data) => {
-              let loadFile = data.file;
-              widget.iframe.src = p5jsPreviewSrc + "?sketch=" + loadFile;
-            });
+              widget.iframe.src = p5jsPreviewSrc + "?sketch=" + widget.sketchfile+'.js';
           });
         });
         btn.serializeValue = () => undefined;
@@ -119,7 +117,7 @@ app.registerExtension({
         body,
       });
       if (resp.status !== 200) {
-        const err = `Error uploading camera image: ${resp.status} - ${resp.statusText}`;
+        const err = `Error uploading image: ${resp.status} - ${resp.statusText}`;
         alert(err);
         throw new Error(err);
       }

@@ -10,53 +10,12 @@ from io import BytesIO
 from PIL import Image
 from server import PromptServer
 
-subfolder = "p5js";
-full_output_folder = os.path.join(folder_paths.get_input_directory(), os.path.normpath(subfolder))
-
-# save sketch to js file
-@PromptServer.instance.routes.post("/HYPE/save_p5js_sketch")
-async def saveSketch(request):
-
-    json_data = await request.json()
-    filename = json_data.get("file", "sketch") + ".js"
-    code = json_data.get("code", "")
-
-    try:
-        if not os.path.exists(full_output_folder):
-            os.makedirs(full_output_folder)
-
-        save_sketch_file = os.path.abspath(os.path.join(full_output_folder, filename))
-
-        f = open(save_sketch_file, "w")
-        f.write(code)
-        f.close()
-
-        return web.json_response({"message": "Sketch saved", "file": filename}, status=200)
-
-    except Exception as e:
-        print("Error saving js file: ", e)
-
 # handle proxy response
 @PromptServer.instance.routes.post('/HYPE/proxy_reply')
 async def proxyHandle(request):
     post = await request.json()
     MessageHolder.addMessage(post["node_id"], post["outputs"])
     return web.json_response({"status": "ok"})
-
-def base64_to_tensor(base64_string):
-    # Decode the base64 string to bytes
-    image_data = base64.b64decode(base64_string)
-    # Create a BytesIO object from the byte data
-    image_bytes = BytesIO(image_data)
-    # Open the image with PIL
-    image = Image.open(image_bytes)
-    # Define a transformation to convert the PIL image to a tensor
-    transform = transforms.ToTensor()
-    # Apply the transformation to the image
-    tensor_image = transform(image)
-    # If needed, add a batch dimension (optional)
-    tensor_image = tensor_image.unsqueeze(0)
-    return tensor_image
 
 class HYPE_P5JSImage(nodes.LoadImage):
     
@@ -82,11 +41,6 @@ class HYPE_P5JSImage(nodes.LoadImage):
     CATEGORY = "p5js"
 
     def run(s, script, image, **kwargs):
-        # tensor_image = base64_to_tensor(p5base64)
-
-        # tensor_image = tensor_image.permute(0, 2, 3, 1)
-        # return (tensor_image,)
-
         return super().load_image(folder_paths.get_annotated_filepath(image))
 
 # Message Handling

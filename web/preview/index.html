@@ -21,7 +21,7 @@
     var script_tag = document.createElement('script');
     script_tag.type = 'text/javascript';
     script_tag.async = true;
-    script_tag.src = '/view?filename=' + sketchName + '&type=input&subfolder=p5js&rand=' + Math.random() + Date.now();
+    script_tag.src = '/view?filename=' + sketchName + '&type=temp&subfolder=p5js&rand=' + Math.random() + Date.now();
     var s = document.getElementsByTagName('script')[0];
     s.parentNode.insertBefore(script_tag, s);
   }
