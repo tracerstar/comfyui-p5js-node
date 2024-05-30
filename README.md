@@ -12,7 +12,7 @@ A full blown p5js editor. That already exists. There's no debugging or error che
 ## How it works
 
 * Paste your sketch in the text box and press the "*Run Sketch*" button.
-* The sketch is saved to the inputs folder in a subdirectory, named `p5js/sketch.js`
+* The sketch is saved to the temp folder in a subdirectory, named `p5js/sketch.js`
 * The iframe gets refreshed with this sketch.
 * Pressing "*Queue Prompt*" will trigger the node to pass control to the JS to query for the canvas obect in the iframe and then return it back for * processing to an image. The image then gets passed along the pipeline.
 
