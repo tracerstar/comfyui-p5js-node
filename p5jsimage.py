@@ -40,8 +40,8 @@ class HYPE_P5JSImage(nodes.LoadImage):
 
     CATEGORY = "p5js"
 
-    def run(s, script, image, **kwargs):
-        return super().load_image(folder_paths.get_annotated_filepath(image))
+    def run(s, **kwargs):
+        return super().load_image(folder_paths.get_annotated_filepath(kwargs['image']))
 
 # Message Handling
 class MessageHolder:
