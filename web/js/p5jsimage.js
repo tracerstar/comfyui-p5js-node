@@ -76,7 +76,11 @@ app.registerExtension({
           },
         };
 
-        node.onRemoved = function () { widget.iframe.remove(); };
+        node.onRemoved = function () {
+          node.widgets[0].inputEl.remove();
+          widget.iframe.remove();
+        };
+        
         node.serialize_widgets = false;
 
         //add run sketch
