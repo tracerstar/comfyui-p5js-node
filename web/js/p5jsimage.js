@@ -6,8 +6,8 @@ const p5jsPreviewSrc = new URL(`../preview/index.html`, import.meta.url);
 
 async function saveSketch(filename, srcCode) {
   try {
-    const blob = new Blob([srcCode], {type: 'text/plain'});
-    const file = new File([blob], filename+'.js');
+    const blob = new Blob([srcCode], { type: 'text/plain' });
+    const file = new File([blob], filename + '.js');
     const body = new FormData();
     body.append("image", file);
     body.append("subfolder", "p5js");
@@ -31,36 +31,41 @@ async function saveSketch(filename, srcCode) {
 
 
 app.registerExtension({
-  
+
   name: "HYPE_P5JSImage",
-  
+
   getCustomWidgets(app) {
     return {
       P5JS(node, inputName) {
-
         const d = new Date();
-        const base_filename = d.getUTCFullYear() + "_" + (d.getUTCMonth()+1) + "_" + d.getUTCDate() + '_';
+        const base_filename = d.getUTCFullYear() + "_" + (d.getUTCMonth() + 1) + "_" + d.getUTCDate() + '_';
 
         const widget = {
           type: "P5JS",
           name: "image",
-          size: [512,120],
+          size: [512, 120],
           sketchfile: base_filename + Math.floor(Math.random() * 10000), //unique filename for each widget, don't love this... maybe make it a millis based time stamp?
-          iframe: $el("iframe", { width:400, height:400, src:p5jsPreviewSrc }),
+          iframe: $el("iframe", { width: 400, height: 400, src: p5jsPreviewSrc }),
 
           draw(ctx, node, widget_width, y, widget_height) {
-            const margin          = 10,
-                  left_offset     = 0,
-                  top_offset      = 0,
-                  visible         = app.canvas.ds.scale > 0.6 && this.type === "p5js_widget",
-                  w               = widget_width - margin * 2,
-                  clientRectBound = ctx.canvas.getBoundingClientRect(),
-                  transform       = new DOMMatrix().scaleSelf(clientRectBound.width / ctx.canvas.width, clientRectBound.height / ctx.canvas.height).multiplySelf(ctx.getTransform()).translateSelf(margin, margin + y),
-                  scale           = new DOMMatrix().scaleSelf(transform.a, transform.d);
+            const [px, py] = node.pos; // node offest
+            const margin = 10;
+            const [cx, cy] = app.canvas.ds.offset; // node offest
+            const [ix, iy] = [
+              ((cx + px + margin) * app.canvas.ds.scale) + app.bodyLeft.offsetWidth,
+              ((cy + py + margin + 305) * app.canvas.ds.scale) + app.bodyLeft.offsetWidth,
+            ];
+
+            const 
+              w = widget_width - margin * 2,
+              clientRectBound = ctx.canvas.getBoundingClientRect(),
+              scaleFactorX = clientRectBound.width / ctx.canvas.width,
+              scaleFactorY = clientRectBound.height / ctx.canvas.height,
+              transform = new DOMMatrix().scaleSelf(scaleFactorX, scaleFactorY).multiplySelf(ctx.getTransform()).translateSelf(px, py);
 
             Object.assign(this.iframe.style, {
-              left: `${transform.a * margin * left_offset + transform.e}px`,
-              top: `${transform.d + transform.f + top_offset}px`,
+              left: `${ix}px`,
+              top: `${iy}px`,
               width: `${w * transform.a}px`,
               height: `${w * transform.d}px`,
               position: "absolute",
@@ -68,11 +73,12 @@ app.registerExtension({
               padding: 0,
               margin: 0,
               zIndex: app.graph._nodes.indexOf(node),
+              display: app.canvas.ds.scale > 0.1 ? 'block' : 'none'
             });
           },
-          
-          computeSize(width) {    
-            return [512,512];
+
+          computeSize(width) {
+            return [512, 512];
           },
         };
 
@@ -80,13 +86,13 @@ app.registerExtension({
           node.widgets[0].inputEl.remove();
           widget.iframe.remove();
         };
-        
+
         node.serialize_widgets = false;
 
         //add run sketch
         const btn = node.addWidget("button", "Run Sketch", "run_p5js_sketch", () => {
           saveSketch(widget.sketchfile, node.widgets[0].value).then((response) => {
-              widget.iframe.src = p5jsPreviewSrc + "?sketch=" + widget.sketchfile+'.js';
+            widget.iframe.src = p5jsPreviewSrc + "?sketch=" + widget.sketchfile + '.js';
           });
         });
         btn.serializeValue = () => undefined;
@@ -130,6 +136,6 @@ app.registerExtension({
 
     //add the iframe to the bottom of the node
     document.body.appendChild(p5jsWidget.iframe);
-    
+
   },
 });
