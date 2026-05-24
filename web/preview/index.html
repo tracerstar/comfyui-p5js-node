@@ -1,31 +1,48 @@
-<!DOCTYPE HTML>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.js" crossorigin=""></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/addons/p5.sound.min.js" crossorigin=""></script>    
-  <style>
-    html, body {margin: 0;padding: 0;background:#222;}
-    canvas {display: block;}
-  </style>
-</head>
-<body>
-<script type="text/javascript">
-(function () {
+  <head>
+    <script
+      src="https://cdn.jsdelivr.net/npm/p5@1.11.5/lib/p5.js"
+      crossorigin=""
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/addons/p5.sound.min.js"
+      crossorigin=""
+    ></script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #222;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="text/javascript">
+      (function () {
+        //get the sketch file name
+        var queryString = window.location.search;
+        var urlParams = new URLSearchParams(queryString);
+        var sketchName = urlParams.get("sketch");
 
-  //get the sketch file name
-  var queryString = window.location.search;
-  var urlParams = new URLSearchParams(queryString);
-  var sketchName = urlParams.get('sketch');
-
-  if (sketchName) {
-    var script_tag = document.createElement('script');
-    script_tag.type = 'text/javascript';
-    script_tag.async = true;
-    script_tag.src = '/view?filename=' + sketchName + '&type=temp&subfolder=p5js&rand=' + Math.random() + Date.now();
-    var s = document.getElementsByTagName('script')[0];
-    s.parentNode.insertBefore(script_tag, s);
-  }
-})();
-</script>
-</body>
+        if (sketchName) {
+          var script_tag = document.createElement("script");
+          script_tag.type = "text/javascript";
+          script_tag.async = true;
+          script_tag.src =
+            "/view?filename=" +
+            sketchName +
+            "&type=temp&subfolder=p5js&rand=" +
+            Math.random() +
+            Date.now();
+          var s = document.getElementsByTagName("script")[0];
+          s.parentNode.insertBefore(script_tag, s);
+        }
+      })();
+    </script>
+  </body>
 </html>

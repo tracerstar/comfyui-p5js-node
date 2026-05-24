@@ -6,13 +6,13 @@ const p5jsPreviewSrc = new URL(`../preview/index.html`, import.meta.url);
 
 async function saveSketch(filename, srcCode) {
   try {
-    const blob = new Blob([srcCode], {type: 'text/plain'});
-    const file = new File([blob], filename+'.js');
+    const blob = new Blob([srcCode], { type: "text/plain" });
+    const file = new File([blob], filename + ".js");
     const body = new FormData();
     body.append("image", file);
     body.append("subfolder", "p5js");
     body.append("type", "temp");
-    body.append("overwrite", "true");//can also be set to 1
+    body.append("overwrite", "true"); //can also be set to 1
     const resp = await api.fetchApi("/upload/image", {
       method: "POST",
       body,
@@ -27,77 +27,250 @@ async function saveSketch(filename, srcCode) {
   } catch (e) {
     console.log(`Error sending sketch file for saving: ${e}`);
   }
-}//end saveSketch
+} //end saveSketch
 
+// Poll the iframe document until p5.js has created its canvas, or time out.
+async function waitForCanvas(iframe, timeoutMs = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    const canvas = doc && doc.getElementById("defaultCanvas0");
+    if (canvas && canvas.width > 0 && canvas.height > 0) {
+      // Give draw() a moment to render its first frame before we read pixels.
+      await new Promise((r) => setTimeout(r, 200));
+      return canvas;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return null;
+}
+
+// Save the current script and (re)load it into the iframe so p5.js runs it.
+// Resolves with the rendered canvas once it exists.
+async function runSketch(iframe, sketchfile, srcCode) {
+  await saveSketch(sketchfile, srcCode);
+  iframe.src = p5jsPreviewSrc + "?sketch=" + sketchfile + ".js";
+  return waitForCanvas(iframe);
+}
+
+// Lazy-load CodeMirror 6 (only once, shared across all nodes).
+let codeMirrorPromise = null;
+function loadCodeMirror() {
+  if (!codeMirrorPromise) {
+    codeMirrorPromise = Promise.all([
+      import("https://esm.sh/codemirror@6.0.1"),
+      import("https://esm.sh/@codemirror/lang-javascript@6.2.2"),
+      import("https://esm.sh/@codemirror/theme-one-dark@6.1.2"),
+      import("https://esm.sh/@codemirror/view@6.26.3"),
+      import("https://esm.sh/@codemirror/commands@6.5.0"),
+    ]).then(([cm, langJs, theme, view, commands]) => ({
+      EditorView: cm.EditorView,
+      basicSetup: cm.basicSetup,
+      javascript: langJs.javascript,
+      oneDark: theme.oneDark,
+      keymap: view.keymap,
+      indentWithTab: commands.indentWithTab,
+      indentMore: commands.indentMore,
+      indentLess: commands.indentLess,
+    }));
+  }
+  return codeMirrorPromise;
+}
+
+async function attachCodeMirror(widget) {
+  console.log("[p5js] script widget:", widget);
+  console.log("[p5js] widget keys:", Object.keys(widget));
+  console.log(
+    "[p5js] element:",
+    widget.element,
+    "inputEl:",
+    widget.inputEl,
+    "options:",
+    widget.options,
+  );
+
+  // The widget's element gets mounted into ComfyUI's DOM container a few frames
+  // after the widget is created. Wait until it actually has a parent, AND also
+  // fall back to a DOM query for the textarea that ComfyUI eventually attaches.
+  let target = null;
+  for (let i = 0; i < 240; i++) {
+    target =
+      (widget.element && widget.element.parentNode && widget.element) ||
+      (widget.inputEl && widget.inputEl.parentNode && widget.inputEl) ||
+      (widget.element instanceof HTMLElement ? widget.element : null) ||
+      null;
+    if (target && target.parentNode) break;
+
+    // Last-resort: scan the DOM for the textarea ComfyUI creates for the
+    // multiline string widget on this node.
+    const allTextareas = document.querySelectorAll(
+      "textarea.comfy-multiline-input, textarea",
+    );
+    for (const ta of allTextareas) {
+      if (
+        ta.value === widget.value ||
+        ta.placeholder === widget.name ||
+        ta.dataset?.widgetName === widget.name
+      ) {
+        target = ta;
+        break;
+      }
+    }
+    if (target && target.parentNode) break;
+    target = null;
+
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+  if (!target || !target.parentNode) {
+    console.warn(
+      "[p5js] script widget element never mounted; skipping CodeMirror",
+      widget,
+    );
+    return;
+  }
+  console.log("[p5js] mounting CodeMirror onto", target.tagName, target);
+
+  const {
+    EditorView,
+    basicSetup,
+    javascript,
+    oneDark,
+    keymap,
+    indentWithTab,
+    indentMore,
+    indentLess,
+  } = await loadCodeMirror();
+  console.log("[p5js] CodeMirror loaded");
+
+  const initialValue = widget.value ?? target.value ?? "";
+
+  const container = document.createElement("div");
+  container.style.cssText =
+    "width: 100%; height: 100%; min-height: 200px; overflow: hidden;" +
+    "box-sizing: border-box; border-radius: 4px; cursor: text;";
+
+  target.parentNode.replaceChild(container, target);
+
+  const editor = new EditorView({
+    doc: initialValue,
+    extensions: [
+      basicSetup,
+      keymap.of([indentWithTab]),
+      javascript(),
+      oneDark,
+      EditorView.theme({
+        "&": { height: "100%", fontSize: "12px" },
+        ".cm-scroller": {
+          overflow: "auto",
+          fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        },
+      }),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          // Push the new text back into the widget via its existing setter,
+          // which keeps ComfyUI's prompt serialization in sync.
+          widget.value = editor.state.doc.toString();
+        }
+      }),
+    ],
+    parent: container,
+  });
+
+  // Capture-phase handler — runs before any ComfyUI listener can move focus
+  // off the editor. Manually invoke indentMore / indentLess instead of relying
+  // on CodeMirror's keymap, which can lose the race against outer listeners.
+  container.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key !== "Tab") return;
+      e.preventDefault();
+      e.stopPropagation();
+      (e.shiftKey ? indentLess : indentMore)(editor);
+    },
+    true,
+  );
+
+  // Clicks inside the editor should place the text caret — not start a node
+  // drag. Let CodeMirror handle the event, then stop it bubbling out to
+  // ComfyUI's canvas.
+  for (const evt of ["pointerdown", "mousedown", "dblclick"]) {
+    container.addEventListener(evt, (e) => e.stopPropagation());
+  }
+
+  widget._cmEditor = editor;
+}
+
+// Kick off the CDN fetch early so the editor is ready by the time a node is created.
+loadCodeMirror();
 
 app.registerExtension({
-  
   name: "HYPE_P5JSImage",
-  
+
   getCustomWidgets(app) {
     return {
       P5JS(node, inputName) {
-
         const d = new Date();
-        const base_filename = d.getUTCFullYear() + "_" + (d.getUTCMonth()+1) + "_" + d.getUTCDate() + '_';
+        const base_filename =
+          d.getUTCFullYear() +
+          "_" +
+          (d.getUTCMonth() + 1) +
+          "_" +
+          d.getUTCDate() +
+          "_";
 
-        const widget = {
-          type: "P5JS",
-          name: "image",
-          size: [512,120],
-          sketchfile: base_filename + Math.floor(Math.random() * 10000), //unique filename for each widget, don't love this... maybe make it a millis based time stamp?
-          iframe: $el("iframe", { width:400, height:400, src:p5jsPreviewSrc }),
+        const sketchfile =
+          base_filename + Math.floor(Math.random() * 10000);
 
-          draw(ctx, node, widget_width, y, widget_height) {
-            const margin          = 10,
-                  left_offset     = 0,
-                  top_offset      = 0,
-                  visible         = app.canvas.ds.scale > 0.6 && this.type === "p5js_widget",
-                  w               = widget_width - margin * 2,
-                  clientRectBound = ctx.canvas.getBoundingClientRect(),
-                  transform       = new DOMMatrix().scaleSelf(clientRectBound.width / ctx.canvas.width, clientRectBound.height / ctx.canvas.height).multiplySelf(ctx.getTransform()).translateSelf(margin, margin + y),
-                  scale           = new DOMMatrix().scaleSelf(transform.a, transform.d);
-
-            Object.assign(this.iframe.style, {
-              left: `${transform.a * margin * left_offset + transform.e}px`,
-              top: `${transform.d + transform.f + top_offset}px`,
-              width: `${w * transform.a}px`,
-              height: `${w * transform.d}px`,
-              position: "absolute",
-              border: '1px solid #000',
-              padding: 0,
-              margin: 0,
-              zIndex: app.graph._nodes.indexOf(node),
-            });
+        const iframe = $el("iframe", {
+          src: p5jsPreviewSrc,
+          style: {
+            border: "1px solid #000",
+            width: "100%",
+            height: "100%",
+            padding: 0,
+            margin: 0,
+            display: "block",
+            background: "#222",
           },
-          
-          computeSize(width) {    
-            return [512,512];
-          },
-        };
+        });
 
-        node.onRemoved = function () {
-          node.widgets[0].inputEl.remove();
-          widget.iframe.remove();
-        };
-        
         node.serialize_widgets = false;
 
-        //add run sketch
-        const btn = node.addWidget("button", "Run Sketch", "run_p5js_sketch", () => {
-          saveSketch(widget.sketchfile, node.widgets[0].value).then((response) => {
-              widget.iframe.src = p5jsPreviewSrc + "?sketch=" + widget.sketchfile+'.js';
-          });
-        });
+        //add run sketch button first so it sits above the iframe
+        const btn = node.addWidget(
+          "button",
+          "Run Sketch",
+          "run_p5js_sketch",
+          () => {
+            runSketch(iframe, sketchfile, node.widgets[0].value);
+          }
+        );
         btn.serializeValue = () => undefined;
 
-        return node.addCustomWidget(widget);
+        // addDOMWidget mounts the iframe inside ComfyUI's DOM-widget container,
+        // which is automatically positioned/scaled by ComfyUI as the canvas pans and zooms.
+        const widget = node.addDOMWidget("image", "P5JS", iframe, {
+          hideOnZoom: false,
+          getMinHeight: () => 400,
+        });
+        widget.sketchfile = sketchfile;
+
+        return widget;
       },
     };
   },
 
   nodeCreated(node) {
-    if ((node.type, node.constructor.comfyClass !== "HYPE_P5JSImage")) return;
+    if (node.constructor.comfyClass !== "HYPE_P5JSImage") return;
+
+    //upgrade the script textarea to a CodeMirror editor
+    const scriptWidget = node.widgets.find((w) => w.name === "script");
+    if (scriptWidget) {
+      attachCodeMirror(scriptWidget).catch((e) => {
+        console.error("Failed to mount CodeMirror editor:", e);
+      });
+    }
 
     //get the p5js widget
     const p5jsWidget = node.widgets.find((w) => w.name === "image");
@@ -105,9 +278,26 @@ app.registerExtension({
     //add serialize method here....
     p5jsWidget.serializeValue = async () => {
       //get the canvas from iframe
-      var theFrame = p5jsWidget.iframe;
-      var iframe_doc = theFrame.contentDocument || theFrame.contentWindow.document;
-      var canvas = iframe_doc.getElementById("defaultCanvas0");//TODO: maybe change this to pull all canvas elements and return the first one created
+      const theFrame = p5jsWidget.element;
+      const iframe_doc =
+        theFrame.contentDocument || theFrame.contentWindow.document;
+      let canvas = iframe_doc.getElementById("defaultCanvas0"); //TODO: maybe change this to pull all canvas elements and return the first one created
+
+      // If the sketch has never been run (no canvas yet), run it now so the
+      // workflow still works without the user clicking "Run Sketch" first.
+      if (!canvas) {
+        const scriptWidget = node.widgets.find((w) => w.name === "script");
+        canvas = await runSketch(
+          theFrame,
+          p5jsWidget.sketchfile,
+          scriptWidget ? scriptWidget.value : node.widgets[0].value,
+        );
+        if (!canvas) {
+          const err = "p5.js sketch did not produce a canvas";
+          alert(err);
+          throw new Error(err);
+        }
+      }
 
       const blob = await new Promise((r) => canvas.toBlob(r));
       const name = `${+new Date()}.png`;
@@ -126,10 +316,6 @@ app.registerExtension({
         throw new Error(err);
       }
       return `p5js/${name} [temp]`;
-    }
-
-    //add the iframe to the bottom of the node
-    document.body.appendChild(p5jsWidget.iframe);
-    
+    };
   },
 });
